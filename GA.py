@@ -12,8 +12,8 @@ except ImportError:
     matplot_installed = False
 
 class GA():
-    def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=50, stop_spread=None, stop_fitness=None, stagnation=0,
-                 population_limit=20, survive_coef=0.25, productivity=4, default_step=0.01, default_bounds=(-100, 100),
+    def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=50, stop_spread=None, stop_fitness=None, stagnation=None,
+                 population_limit=20, survive_coef=0.25, productivity=4,
                  mutagen="1_step", cata_mutagen="full_step", verbose=True, plot=False):
         '''
         :param: evaluator - фитнес-функция
@@ -27,8 +27,6 @@ class GA():
         :param: population_limit - размер популяции
         :param: survive_coef - процент выживших (лучших) после каждой итерации
         :param: productivity - количество потомков на каждую выжившую особь
-        :param: default_bounds - границы по умолчанию
-        :param: default_step - шаг по умолчанию для мутации *_step
         :param: mutagen - тип мутации (1_step, full_step, 1_random, full_random, 1_change, full_change)
                           1_step - менять один ген на размер шага, full_step - так же менять все гены,
                           1_random - менять один ген на случайное число в диапазоне bounds, full_random - так же менять все гены,
@@ -47,7 +45,6 @@ class GA():
         self.population_limit = population_limit
         self.survive_coef = survive_coef
         self.productivity = productivity
-        self.default_step = default_step
         self.mutagen = mutagen
         self.cata_mutagen = cata_mutagen
         self.verbose = verbose
@@ -56,6 +53,8 @@ class GA():
         self.best_ever = None  # место для самого лучшего
         self.fitness = []  # сохраняем рейтинги для анализа
         self.spreads = []  # сохраняем спреды для анализа
+        default_step = 0.01
+        default_bounds = (-100, 100)
         
         if type(bounds) is list:
             self.bounds = bounds
@@ -239,15 +238,42 @@ def frange(start, stop, step):
         start += step
     return flist
 
-def test_equation(x):
+def example_equation(x):
     '''Equation: a + 2b + 3c + 4d = 30'''
-    z = x[0] + 2 * x[1] + 3 * x[2] + 4 * x[3]
+    a, b, c, d = x
+    z = a + 2*b + 3*c + 4*d
     ans = 30
-    print("{:.1f} {:+.1f}*2 {:+.1f}*3 {:+.1f}*4 = {:.1f}".format(x[0], x[1], x[2], x[3], z), "- Solved!" if z == ans else "")
+    print("{:.0f} {:+.0f}*2 {:+.0f}*3 {:+.0f}*4 = {:.0f}".format(a, b, c, d, z), "- Solved!" if z == ans else "")
     return -abs(ans-z)
     
 if __name__ == '__main__':
-    ga = GA(test_equation, bounds=(-100, 100, 1), num_genes=4, stop_fitness=0, stagnation=3, plot=True)
+    '''
+    Пример:
+    Попробуем найти одно из решений диофантова уравнения (с целочисленными корнями): a + 2b + 3c + 4d = 30.
+    Фитнес-функция example_equation получает на вход список предположительных корней уравнения и возвращает 
+        отрицательное расстояние (фитнес по логике должен расти) до его равенства (30).
+    То есть при корнях являющихся решением, фитнес-функция вернет 0, во всех других случаях отрицательное число,
+        которое тем ближе к нулю, чем больше наши корни похожи на решение.
+    
+    Параметры эволюции:
+    steps = 40 - дадим эволюции не более 40 поколений
+    stop_fitness = 0 - останавливаем эволюцию, когда функция вернула 0, значит решение найдено
+    bounds = (-100, 100, 1) - наши корни лежат где-то в диапазоне (-100, 100), шаг равен единице, поскольку корни целочисленные
+    num_genes = 4 - у нас 4 корня
+    stagnation = 3 - если эволюция войдет в застой на 3 поколения, применяем катаклизм
+    mutagen = "1_step" - у каждой особи (потенциального решения) при рождении создаем мутацию - 
+        меняем один из параметров на размер шага
+    cata_mutagen = "full_step" - если мы вошли в стагнацию, применяем более сильную мутацию - 
+        меняем все параметры на размер шага
+    population_limit = 10 - в каждом поколении будем тестировать 10 вариантов решения (особей)
+    survive_coef = 0.2 - из каждого поколения выбираем 20% лучших решений (то есть 2 особи из 10 смогут оставить потомков)
+    productivity = 4 - каждая из двух выживших особей после скрещивания с соседом производит 4 потомка,
+        то есть в новом поколении будет 8 потомков, остальные 2 места в популяции займут особи сгенерированные случайным образом
+    plot = True - если установлен matplotlib, будем наблюдать эволюционный прогресс на графике
+    '''
+    ga = GA(example_equation, bounds=(-100, 100, 1), num_genes=4, steps=40, stop_fitness=0, stagnation=3, 
+            population_limit=10, survive_coef=0.2, productivity=4, mutagen="1_step", cata_mutagen="full_step",
+            plot=True)
     result = ga.evolve()
     print("Best solution:", result)
     
