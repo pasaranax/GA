@@ -247,7 +247,7 @@ def test_equation(x):
     return -abs(ans-z)
     
 if __name__ == '__main__':
-    ga = GA(test_equation, bounds=(-100, 100, 1), num_genes=4, stop_fitness=0, stagnation=3, mutagen="1_step", plot=True)
+    ga = GA(test_equation, bounds=(-100, 100, 1), num_genes=4, stop_fitness=0, stagnation=3, plot=True)
     result = ga.evolve()
     print("Best solution:", result)
     
