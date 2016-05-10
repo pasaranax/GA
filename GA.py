@@ -4,6 +4,7 @@
 '''
 from random import randint, choice, uniform, sample
 from time import time
+from math import exp, isclose
 try:
     import numpy as np
     from matplotlib import pyplot as plt
@@ -59,7 +60,10 @@ class GA():
         if type(bounds) is list:
             self.bounds = bounds
         elif type(bounds) is tuple and num_genes:
-            self.bounds = self.gen_bounds(bounds[0], bounds[1], bounds[2], num_genes)
+            try:
+                self.bounds = self.gen_bounds(bounds[0], bounds[1], bounds[2], num_genes)
+            except IndexError:
+                self.bounds = self.gen_bounds(bounds[0], bounds[1], default_step, num_genes)
         elif not bounds:
             self.bounds = self.gen_bounds(default_bounds[0], default_bounds[1], 
                                           default_step, num_genes)
@@ -106,11 +110,11 @@ class GA():
             # условия досрочного завершения
             if self.stop_spread != None and self.spreads[-1] <= self.stop_spread:
                 if self.verbose >= 1:
-                    print("- Evolution complete: spread = {:.3f} <= {:.3f}".format(self.spreads[-1], self.stop_spread))
+                    print("- Evolution completed: spread = {:.3f} <= {:.3f}".format(self.spreads[-1], self.stop_spread))
                 break
             if self.stop_fitness != None and self.best_ever[1] >= self.stop_fitness:
                 if self.verbose >= 1:
-                    print("- Evolution complete: best fitness = {:.3f} <= {:.3f}".format(self.best_ever[1], self.stop_fitness))
+                    print("- Evolution completed: best fitness = {:.3f} <= {:.3f}".format(self.best_ever[1], self.stop_fitness))
                 break
             
             if self.plot:
@@ -238,40 +242,61 @@ def frange(start, stop, step):
         start += step
     return flist
 
-def example_equation(x):
+def example_diophante(x):
     '''Equation: a + 2b + 3c + 4d = 30'''
     a, b, c, d = x
     z = a + 2*b + 3*c + 4*d
     ans = 30
-    print("{:.0f} {:+.0f}*2 {:+.0f}*3 {:+.0f}*4 = {:.0f}".format(a, b, c, d, z), "- Solved!" if z == ans else "")
+    print("a={:3.0f} b={:3.0f} c={:3.0f} d={:3.0f} z={:3.0f}".format(a, b, c, d, z), "- Solved!" if z == ans else "")
     return -abs(ans-z)
     
+def example_rosenbrock(x):
+    '''f(x1, x2) = (1 - x1)**2 + 100(x2 - x1**2)**2'''
+    f = (1 - x[0])**2 + 100*(x[1] - x[0]**2)**2
+    print("x1={:.3f}, x2={:.3f}, f={:.3f} {}".format(x[0], x[1], f, "- Close enough!" if isclose(f, 0, abs_tol=1e-6) else ""))
+    return -abs(f)
+
+def example_powell(x):
+    '''f(x1, x2, x3, x4) = (x1 + 10*x2)**2 + 5(x3 - x4)**2 + (x2 - 2*x3)**4 + 10(x1 - x4)**4'''
+    x1, x2, x3, x4 = x
+    f = (x1 + 10*x2)**2 + 5*(x3 - x4)**2 + (x2 - 2*x3)**4 + 10*(x1 - x4)**4
+    print("x1={:.3f}, x2={:.3f}, x3={:.3f}, x4={:.3f}, f={:.3f} {}".format(x1, x2, x3, x4, f, "- Close enough!" if isclose(f, 0, abs_tol=1e-6) else ""))
+    return -abs(f)
+
+def example_2dexp(x):
+    '''f(x1, x2) = SUM(a, (e**(-ax1) - e**(-ax2)) - (e**(-a) - e**(-10a)))**2
+    for a in frange(0.1, 1, 0.1)'''
+    x1, x2 = x
+    f = sum([((exp(-a*x1) - exp(-a*x2)) - (exp(-a) - exp(-10*a)))**2 for a in frange(0.1, 1, 0.1)])
+    print("x1={:.3f}, x2={:.3f}, f={:.3f} {}".format(x1, x2, f, "- Close enough!" if isclose(f, 0, abs_tol=1e-6) else ""))
+    return -abs(f)
+
 if __name__ == '__main__':
     '''
     Пример:
     Попробуем найти одно из решений диофантова уравнения (с целочисленными корнями): a + 2b + 3c + 4d = 30.
-    Фитнес-функция example_equation получает на вход список предположительных корней уравнения и возвращает 
-        отрицательное расстояние (фитнес по логике должен расти) до его равенства (30).
+    Фитнес-функция example_diophante получает на вход список предположительных корней уравнения и возвращает 
+        отрицательное расстояние (чем больше фитнес, тем лучше) до его равенства (30).
     То есть при корнях являющихся решением, фитнес-функция вернет 0, во всех других случаях отрицательное число,
-        которое тем ближе к нулю, чем больше наши корни похожи на решение.
+        которое чем ближе к нулю, тем больше наши корни похожи на решение.
     
     Параметры эволюции:
     steps = 40 - дадим эволюции не более 40 поколений
-    stop_fitness = 0 - останавливаем эволюцию, когда функция вернула 0, значит решение найдено
-    bounds = (-100, 100, 1) - наши корни лежат где-то в диапазоне (-100, 100), шаг равен единице, поскольку корни целочисленные
+    stop_fitness = 0 - останавливаем эволюцию, когда функция вернула 0, значит решение найдено. Нужно указать с учетом точности.
+    bounds = (-100, 100, 1) - предположим корни лежат где-то в диапазоне (-100, 100), шаг единица, поскольку корни целочисленные.
+        От шага зависит точность поиска решения.
     num_genes = 4 - у нас 4 корня
-    stagnation = 3 - если эволюция войдет в застой на 3 поколения, применяем катаклизм
+    stagnation = 3 - если эволюция войдет в застой на 3 поколения, применяем катаклизм (более сильную мутацию)
     mutagen = "1_step" - у каждой особи (потенциального решения) при рождении создаем мутацию - 
         меняем один из параметров на размер шага
-    cata_mutagen = "full_step" - если мы вошли в стагнацию, применяем более сильную мутацию - 
-        меняем все параметры на размер шага
+    cata_mutagen = "full_step" - если мы вошли в стагнацию, применяем катаклизм - меняем все параметры на размер шага
     population_limit = 10 - в каждом поколении будем тестировать 10 вариантов решения (особей)
     survive_coef = 0.2 - из каждого поколения выбираем 20% лучших решений (то есть 2 особи из 10 смогут оставить потомков)
-    productivity = 4 - каждая из двух выживших особей после скрещивания с соседом производит 4 потомка,
-        то есть в новом поколении будет 8 потомков, остальные 2 места в популяции займут особи сгенерированные случайным образом
+    productivity = 4 - на каждую из двух выживших особей после скрещивания приходится 4 потомка, то есть в новом поколении 
+        будет 8 потомков, остальные 2 места в популяции займут особи сгенерированные случайным образом
     plot = True - если установлен matplotlib, будем наблюдать эволюционный прогресс на графике
     '''
-    ga = GA(example_equation, bounds=(-100, 100, 1), num_genes=4, steps=40, stop_fitness=0, stagnation=3, 
+    ga = GA(example_diophante, bounds=(-100, 100, 1), num_genes=4, steps=40, stop_fitness=0, stagnation=3,
             population_limit=10, survive_coef=0.2, productivity=4, mutagen="1_step", cata_mutagen="full_step",
             plot=True)
     result = ga.evolve()
