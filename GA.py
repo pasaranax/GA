@@ -17,24 +17,24 @@ class GA():
                  population_limit=20, survive_coef=0.25, productivity=4,
                  mutagen="1_step", cata_mutagen="full_step", verbose=True, plot=False):
         '''
-        :param: evaluator - фитнес-функция
-        :param: bounds - границы значений генов и шаг для изменения, tuple(left, right, step), одно значение или список для каждого гена
-        :param: num_genes - количество параметров (генов)
-        :param: init - набор генов для особи, которая добавляется в начальную популяцию (альфа-самец)
-        :param: steps - количество итераций (поколений)
-        :param: stop_spread - если разброс результатов лучших особей менее чем stop_spread, завершить цикл
-        :param: stop_fitness - если fitness достигнет stop_fitness, завершить цикл
-        :param: stagnation - если количество итераций с одинаковым спредом достигнет stagnation, вызвать катаклизм (усиленная мутация)
-        :param: population_limit - размер популяции
-        :param: survive_coef - процент выживших (лучших) после каждой итерации
-        :param: productivity - количество потомков на каждую выжившую особь
-        :param: mutagen - тип мутации (1_step, full_step, 1_random, full_random, 1_change, full_change)
+        :param evaluator: фитнес-функция
+        :param bounds: границы значений генов и шаг для изменения, tuple(left, right, step), одно значение или список для каждого гена
+        :param num_genes: количество параметров (генов)
+        :param init: набор генов для особи, которая добавляется в начальную популяцию (альфа-самец)
+        :param steps: количество итераций (поколений)
+        :param stop_spread: если разброс результатов лучших особей менее чем stop_spread, завершить цикл
+        :param stop_fitness: если fitness достигнет stop_fitness, завершить цикл
+        :param stagnation: если количество итераций с одинаковым спредом достигнет stagnation, вызвать катаклизм (усиленная мутация)
+        :param population_limit: размер популяции
+        :param survive_coef: процент выживших (лучших) после каждой итерации
+        :param productivity: количество потомков на каждую выжившую особь
+        :param mutagen: тип мутации (1_step, full_step, 1_random, full_random, 1_change, full_change)
                           1_step - менять один ген на размер шага, full_step - так же менять все гены,
                           1_random - менять один ген на случайное число в диапазоне bounds, full_random - так же менять все гены,
                           1_change - менять один ген на 0-10% (случайно), full_change - так же менять все гены
-        :param: cata_mutagen - тип мутации при катаклизме
-        :param: verbose - уровень вывода в консоль
-        :param: plot - рисовать график результатов (необходим matplotlib, может замедлить работу)
+        :param cata_mutagen: тип мутации при катаклизме
+        :param verbose: уровень вывода в консоль
+        :param plot: рисовать график результатов (необходим matplotlib, может замедлить работу)
         '''
         assert type(bounds) is list or (type(bounds) is tuple and type(num_genes) is int)
         self.evaluator = evaluator
