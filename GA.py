@@ -104,7 +104,7 @@ class GA():
                              elapsed // 60, elapsed % 60, remaining // 60, remaining % 60))
             
             # условие катаклизма
-            if self.stagnation > 1 and len(set(self.spreads[-self.stagnation:])) == 1:
+            if self.stagnation and len(set(self.spreads[-self.stagnation:])) == 1:
                 newborns = self.cataclism(population, self.cata_mutagen)
 
             # условия досрочного завершения
