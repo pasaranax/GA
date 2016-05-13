@@ -5,6 +5,7 @@
 from random import randint, choice, uniform, sample
 from time import time
 from math import exp, isclose
+from json import dump, load
 try:
     import numpy as np
     from matplotlib import pyplot as plt
@@ -14,8 +15,8 @@ except ImportError:
 
 class GA():
     def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=50, stop_spread=None, stop_fitness=None, stagnation=None,
-                 population_limit=20, survive_coef=0.25, productivity=4,
-                 mutagen="1_step", cata_mutagen="full_step", verbose=True, plot=False):
+                 population_limit=20, survive_coef=0.25, productivity=4, cross_type="split",
+                 mutagen="1_step", cata_mutagen="full_step", autosave="population.json", verbose=True, plot=False):
         '''
         :param evaluator: фитнес-функция
         :param bounds: границы значений генов и шаг для изменения, tuple(left, right, step), одно значение или список для каждого гена
@@ -28,6 +29,9 @@ class GA():
         :param population_limit: размер популяции
         :param survive_coef: процент выживших (лучших) после каждой итерации
         :param productivity: количество потомков на каждую выжившую особь
+        :param cross_type: тип скрещивания (split, random)
+                            split - первая половина генов от мамы, вторая половина от папы
+                            random - в случайном порядке от родителей
         :param mutagen: тип мутации (1_step, full_step, 1_random, full_random, 1_change, full_change)
                           1_step - менять один ген на размер шага, full_step - так же менять все гены,
                           1_random - менять один ген на случайное число в диапазоне bounds, full_random - так же менять все гены,
@@ -46,8 +50,10 @@ class GA():
         self.population_limit = population_limit
         self.survive_coef = survive_coef
         self.productivity = productivity
+        self.cross_type = cross_type
         self.mutagen = mutagen
         self.cata_mutagen = cata_mutagen
+        self.autosave = autosave
         self.verbose = verbose
         self.plot = plot
         
@@ -73,20 +79,31 @@ class GA():
         else:
             plot = False
         
-    def evolve(self, steps=None):
+    def adopt(self, file, steps=None):
+        '''
+        Загрузить популяцию из файла и продолжить эволюцию
+        :param file: file-like json-файл с готовой популяцией
+        '''
+        self.file = file
+        newborns = load(file)
+        return self.evolve(steps, newborns)
+        
+    def evolve(self, steps=None, newborns=None):
         '''
         Запустить эволюцию
-        :param: step - количество шагов можно указать здесь
+        :param steps: количество шагов можно указать здесь
+        :param newborns: продолжить эволюцию готовой популяции
         '''
         if steps:
             self.steps = steps
         t = time()
-        newborns = []  # новорожденные без фитнеса
+        if type(newborns) != list:
+            newborns = []  # новорожденные без фитнеса
         if self.init:
             newborns.append(self.init)
         for i in range(self.steps):
             ti = time()
-            population = self.generate_population(newborns)
+            population = self.generate_population(newborns)  # популяция с фитнесом
             if not self.best_ever:
                 self.best_ever = population[0]
             best = self.survive(population)            
@@ -103,10 +120,14 @@ class GA():
                       format(i+1, self.steps, self.best_ever[1], self.spreads[-1],
                              elapsed // 60, elapsed % 60, remaining // 60, remaining % 60))
             
+            # сохраняем популяцию в файл
+            if self.autosave:
+                dump(newborns, open(self.autosave, "w"), separators=(",",":"))
+
             # условие катаклизма
             if self.stagnation and len(set(self.spreads[-self.stagnation:])) == 1:
                 newborns = self.cataclism(population, self.cata_mutagen)
-
+            
             # условия досрочного завершения
             if self.stop_spread != None and self.spreads[-1] <= self.stop_spread:
                 if self.verbose >= 1:
@@ -155,10 +176,15 @@ class GA():
         newborns = []
         for _ in range(len(best) * self.productivity):
             dad, mom = sample(best, 2)
+            dad, mom = dad[0], mom[0]  # только геном без фитнеса
             child = []
-            for gene_m, gene_f in zip(dad[0], mom[0]):  # извлекаем геном
-                gene = choice((gene_m, gene_f))
-                child.append(gene)
+            if self.cross_type == "random":
+                for gene_m, gene_f in zip(dad, mom):  # извлекаем геном
+                    gene = choice((gene_m, gene_f))
+                    child.append(gene)
+            elif self.cross_type == "split":
+                split = len(dad) // 2
+                child = dad[:split] + mom[split:]
             newborns.append(child)
         return newborns
 
