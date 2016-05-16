@@ -125,7 +125,7 @@ class GA():
                 dump(newborns, open(self.autosave, "w"), separators=(",",":"))
 
             # условие катаклизма
-            if self.stagnation and len(set(self.spreads[-self.stagnation:])) == 1:
+            if self.stagnation and len(self.spreads[-self.stagnation:]) == self.stagnation and len(set(self.spreads[-self.stagnation:])) == 1:
                 newborns = self.cataclism(population, self.cata_mutagen)
             
             # условия досрочного завершения
@@ -232,7 +232,7 @@ class GA():
         for indiv, _fitness in population:
             post_population.append(self.mutate(indiv, mutagen))
         if self.verbose >= 1:
-            print("- Cataclism occured because stagnation {}: {}".format(self.stagnation, mutagen))
+            print("- Cataclism occured because of stagnation {}: {}".format(self.stagnation, mutagen))
         return post_population
     
     def gen_bounds(self, left, right, step, num):
@@ -260,6 +260,10 @@ class GA():
 #             high = max(high, max(gen))
 #         self.ax[0].set_ylim([low, high])
         plt.pause(0.001)
+        
+class Plotter():
+    pass
+    
 
 def frange(start, stop, step):
     flist = []
