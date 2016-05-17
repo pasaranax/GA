@@ -14,8 +14,8 @@ except ImportError:
     matplot_installed = False
 
 class GA():
-    def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=50, stop_spread=None, stop_fitness=None, stagnation=None,
-                 population_limit=20, survive_coef=0.25, productivity=4, cross_type="split",
+    def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=100, stop_spread=None, stop_fitness=None, stagnation=None,
+                 population_limit=20, survive_coef=0.25, productivity=4, cross_type="split", mutate_genes=1,
                  mutagen="1_step", cata_mutagen="full_step", autosave="population.json", verbose=True, plot=False):
         '''
         :param evaluator: фитнес-функция
@@ -32,6 +32,7 @@ class GA():
         :param cross_type: тип скрещивания (split, random)
                             split - первая половина генов от мамы, вторая половина от папы
                             random - в случайном порядке от родителей
+        :param mutate_genes: сколько генов модифицировать в мутациях 1_*
         :param mutagen: тип мутации (1_step, full_step, 1_random, full_random, 1_change, full_change)
                           1_step - менять один ген на размер шага, full_step - так же менять все гены,
                           1_random - менять один ген на случайное число в диапазоне bounds, full_random - так же менять все гены,
@@ -51,6 +52,7 @@ class GA():
         self.survive_coef = survive_coef
         self.productivity = productivity
         self.cross_type = cross_type
+        self.mutate_genes = mutate_genes
         self.mutagen = mutagen
         self.cata_mutagen = cata_mutagen
         self.autosave = autosave
@@ -126,7 +128,7 @@ class GA():
 
             # условие катаклизма
             if self.stagnation and len(self.spreads[-self.stagnation:]) == self.stagnation and len(set(self.spreads[-self.stagnation:])) == 1:
-                newborns = self.cataclism(population, self.cata_mutagen)
+                newborns = self.cataclysm(population, self.cata_mutagen)
             
             # условия досрочного завершения
             if self.stop_spread != None and self.spreads[-1] <= self.stop_spread:
@@ -190,18 +192,21 @@ class GA():
 
     def mutate(self, indiv, mutagen):
         if mutagen == "1_random":
-            gene_id = randint(0, len(indiv)-1)
-            indiv[gene_id] = uniform(self.bounds[gene_id][0], self.bounds[gene_id][1])
+            gene_ids = [randint(0, len(indiv)-1) for _ in range(self.mutate_genes)]
+            for gene_id in gene_ids:
+                gene_id = randint(0, len(indiv)-1)
+                indiv[gene_id] = uniform(self.bounds[gene_id][0], self.bounds[gene_id][1])
         elif mutagen == "full_random":
             for gene_id in range(len(indiv)):
                 indiv[gene_id] = uniform(self.bounds[gene_id][0], self.bounds[gene_id][1])
         elif mutagen == "1_change":
-            gene_id = randint(0, len(indiv)-1)
-            while True:
-                coef = uniform(0.9, 1.1)
-                if self.bounds[gene_id][0] <= indiv[gene_id] * coef <= self.bounds[gene_id][1]:
-                    indiv[gene_id] *= coef
-                    break
+            gene_ids = [randint(0, len(indiv)-1) for _ in range(self.mutate_genes)]
+            for gene_id in gene_ids:
+                while True:
+                    coef = uniform(0.9, 1.1)
+                    if self.bounds[gene_id][0] <= indiv[gene_id] * coef <= self.bounds[gene_id][1]:
+                        indiv[gene_id] *= coef
+                        break
         elif mutagen == "full_change":
             for gene_id in range(len(indiv)):
                 while True:
@@ -210,13 +215,15 @@ class GA():
                         indiv[gene_id] *= coef
                         break
         elif mutagen == "1_step":
-            gene_id = randint(0, len(indiv)-1)
-            while True:
-                step = self.bounds[gene_id][2]
-                step = choice([-step, step])
-                if self.bounds[gene_id][0] <= indiv[gene_id] + step <= self.bounds[gene_id][1]:
-                    indiv[gene_id] += step
-                    break
+            gene_ids = [randint(0, len(indiv)-1) for _ in range(self.mutate_genes)]
+            for gene_id in gene_ids:
+                gene_id = randint(0, len(indiv)-1)
+                while True:
+                    step = self.bounds[gene_id][2]
+                    step = choice([-step, step])
+                    if self.bounds[gene_id][0] <= indiv[gene_id] + step <= self.bounds[gene_id][1]:
+                        indiv[gene_id] += step
+                        break
         elif mutagen == "full_step":
             for gene_id in range(len(indiv)):
                 while True:
@@ -227,12 +234,12 @@ class GA():
                         break
         return indiv
     
-    def cataclism(self, population, mutagen):
+    def cataclysm(self, population, mutagen):
         post_population = []
         for indiv, _fitness in population:
             post_population.append(self.mutate(indiv, mutagen))
         if self.verbose >= 1:
-            print("- Cataclism occured because of stagnation {}: {}".format(self.stagnation, mutagen))
+            print("- Cataclysm occured because of stagnation {}: {}".format(self.stagnation, mutagen))
         return post_population
     
     def gen_bounds(self, left, right, step, num):
