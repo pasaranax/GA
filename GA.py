@@ -2,42 +2,48 @@
 @author: Mikhail Bulygin
 @email: pasaranax@gmail.com
 '''
-from random import randint, choice, uniform, sample
-from time import time
+from random import randint, choice, uniform, sample, shuffle
+from time import time, sleep
 from math import exp, isclose
 from json import dump, load
+from multiprocessing.pool import Pool
+from multiprocessing import Process  # @UnresolvedImport
+from threading import Thread, active_count
 try:
     import numpy as np
-    from matplotlib import pyplot as plt
+    import matplotlib.pyplot as plt
     matplot_installed = True
 except ImportError:
     matplot_installed = False
 
 class GA():
-    def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=100, stop_spread=None, stop_fitness=None, stagnation=None,
-                 population_limit=20, survive_coef=0.25, productivity=4, cross_type="split", mutate_genes=1, cata_mutate_genes=2,
-                 mutagen="1_step", cata_mutagen="1_step", autosave="population.json", verbose=True, plot=False):
+    def __init__(self, evaluator, bounds=None, num_genes=None, init=None, steps=100, stop_fitness=None, time_limit=None, 
+                 stagnation=None, population_limit=20, survive_coef=0.25, productivity=4, cross_type="split", 
+                 mutate_genes=1, cata_mutate_genes=2, mutagen="1_step", cata_mutagen="1_step", 
+                 autosave="population.json", verbose=True, plot=False):
         '''
         :param evaluator: фитнес-функция
         :param bounds: границы значений генов и шаг для изменения, tuple(left, right, step), одно значение или список для каждого гена
         :param num_genes: количество параметров (генов)
         :param init: набор генов для особи, которая добавляется в начальную популяцию (альфа-самец)
         :param steps: количество итераций (поколений)
-        :param stop_spread: если разброс результатов лучших особей менее чем stop_spread, завершить цикл
         :param stop_fitness: если fitness достигнет stop_fitness, завершить цикл
+        :param time_limit: ограничение по времени в секундах, после которого стоит завершить эволюцию
         :param stagnation: если количество итераций с одинаковым спредом достигнет stagnation, вызвать катаклизм (усиленная мутация)
         :param population_limit: размер популяции
         :param survive_coef: процент выживших (лучших) после каждой итерации
         :param productivity: количество потомков на каждую выжившую особь
         :param cross_type: тип скрещивания (split, random)
-                            split - первая половина генов от мамы, вторая половина от папы
+                            split - первая половина генов от папы, вторая половина от мамы
                             random - в случайном порядке от родителей
+                            uniq_split - аналогичен split, но повторяющиеся значения заменяются случайными (все гены уникальны)
         :param mutate_genes: сколько генов модифицировать в мутациях 1_*
         :param cata_mutate_genes: сколько генов модифицировать в мутациях 1_* при катаклизме
         :param mutagen: тип мутации (1_step, full_step, 1_random, full_random, 1_change, full_change)
                           1_step - менять один ген на размер шага, full_step - так же менять все гены,
                           1_random - менять один ген на случайное число в диапазоне bounds, full_random - так же менять все гены,
                           1_change - менять один ген на 0-10% (случайно), full_change - так же менять все гены
+                          swap - поменять местами 2 гена (используйте только если все гены имеют одинаковые границы bounds)
         :param cata_mutagen: тип мутации при катаклизме
         :param verbose: уровень вывода в консоль
         :param plot: рисовать график результатов (необходим matplotlib, может замедлить работу)
@@ -46,8 +52,8 @@ class GA():
         self.evaluator = evaluator
         self.init = init
         self.steps = steps
-        self.stop_spread = stop_spread
         self.stop_fitness = stop_fitness
+        self.time_limit = time_limit
         self.stagnation = stagnation
         self.population_limit = population_limit
         self.survive_coef = survive_coef
@@ -61,7 +67,7 @@ class GA():
         self.verbose = verbose
         self.plot = plot
         
-        self.best_ever = None  # место для самого лучшего
+        self.best_ever = []  # История лучших
         self.fitness = []  # сохраняем рейтинги для анализа
         self.spreads = []  # сохраняем спреды для анализа
         default_step = 0.01
@@ -71,17 +77,18 @@ class GA():
             self.bounds = bounds
         elif type(bounds) is tuple and num_genes:
             try:
-                self.bounds = self.gen_bounds(bounds[0], bounds[1], bounds[2], num_genes)
+                self.bounds = [(bounds[0], bounds[1], bounds[2])] * num_genes
             except IndexError:
-                self.bounds = self.gen_bounds(bounds[0], bounds[1], default_step, num_genes)
+                self.bounds = [(bounds[0], bounds[1], default_step)] * num_genes
         elif not bounds:
             self.bounds = self.gen_bounds(default_bounds[0], default_bounds[1], 
                                           default_step, num_genes)
         
         if matplot_installed and plot:
-            self.prepare_plot()
+            self.plotter = Plotter()
+            self.plotter.start()
         else:
-            plot = False
+            self.plot = False
         
     def adopt(self, file, steps=None):
         '''
@@ -108,20 +115,19 @@ class GA():
         for i in range(self.steps):
             ti = time()
             population = self.generate_population(newborns)  # популяция с фитнесом
-            if not self.best_ever:
-                self.best_ever = population[0]
+            if len(self.best_ever) == 0:
+                self.best_ever.append(population[0])
             best = self.survive(population)            
             newborns = self.crossover(best)
             
-            self.best_ever = max(self.best_ever, best[0], key=lambda i: i[1])
-            self.spreads.append(self.best_ever[1] - min(best, key=lambda i: i[1])[1])
+            self.best_ever.append(best[0])
             self.fitness.append([i[1] for i in population])
 
             if self.verbose:
                 elapsed = time()-t
                 remaining = (time()-ti)*(self.steps-i)
-                print("- Step {:d} / {:d} results: best: {:.3f}, spread: {:.3f}, elapsed: {:.0f}m {:.0f}s, remaining: {:.0f}m {:.0f}s".
-                      format(i+1, self.steps, self.best_ever[1], self.spreads[-1],
+                print("- Step {:d} / {:d} results: best: {:.3f}, elapsed: {:.0f}m {:.0f}s, remaining: {:.0f}m {:.0f}s".
+                      format(i+1, self.steps, self.best_ever[-1][1],
                              elapsed // 60, elapsed % 60, remaining // 60, remaining % 60))
             
             # сохраняем популяцию в файл
@@ -129,25 +135,30 @@ class GA():
                 dump(newborns, open(self.autosave, "w"), separators=(",",":"))
 
             # условие катаклизма
-            if self.stagnation and len(self.spreads[-self.stagnation:]) == self.stagnation and len(set(self.spreads[-self.stagnation:])) == 1:
-                newborns = self.cataclysm(population)
+            if self.stagnation:
+                best_fitness = [i[1] for i in self.best_ever[-self.stagnation:]]
+                if len(best_fitness) == self.stagnation and len(set(best_fitness)) == 1:
+                    newborns = self.cataclysm(population)
             
             # условия досрочного завершения
-            if self.stop_spread != None and self.spreads[-1] <= self.stop_spread:
+            if self.stop_fitness != None and self.best_ever[-1][1] >= self.stop_fitness:
                 if self.verbose >= 1:
-                    print("- Evolution completed: spread = {:.3f} <= {:.3f}".format(self.spreads[-1], self.stop_spread))
+                    print("- Evolution completed: best fitness = {:.3f} <= {:.3f}".format(self.best_ever[-1][1], self.stop_fitness))
                 break
-            if self.stop_fitness != None and self.best_ever[1] >= self.stop_fitness:
+            
+            if self.time_limit and time() - t >= self.time_limit:
                 if self.verbose >= 1:
-                    print("- Evolution completed: best fitness = {:.3f} <= {:.3f}".format(self.best_ever[1], self.stop_fitness))
+                    print("- Evolution completed: time is out: {} s.".format(self.time_limit))
                 break
             
             if self.plot:
-                self.draw()
+                self.plotter.update(self.fitness, self.spreads)
+        if self.verbose >= 1:
+            print("Best: {} - {}".format(self.best_ever[-1][1], self.best_ever[-1][0]))
         if self.plot:
-            plt.ioff()
-            plt.show()
-        return self.best_ever
+            self.plotter.stop()
+            self.plotter.join()
+        return max(self.best_ever, key=lambda i: i[1])
     
     def generate_population(self, newborns):
         population = []
@@ -160,15 +171,23 @@ class GA():
         # создаем случайных особей, если есть места в популяции
         for _ in range(self.population_limit - len(newborns)):
             indiv = []
-            for bounds in self.bounds:
-                if self.mutagen.endswith("random") or self.mutagen.endswith("change"):
+            if self.mutagen.endswith("random") or self.mutagen.endswith("change"):
+                for bounds in self.bounds:
                     gene = uniform(bounds[0], bounds[1])
-                elif self.mutagen.endswith("step"):
+                    indiv.append(gene)
+            elif self.mutagen.endswith("step"):
+                for bounds in self.bounds:
                     step = bounds[2]
                     gene = choice(frange(bounds[0], bounds[1]+step, step))
-                indiv.append(gene)
+                    indiv.append(gene)
+            elif self.mutagen.endswith("swap"):
+                bounds = self.bounds[0]
+                step = bounds[2]
+                indiv = frange(bounds[0], bounds[1]+step, step)
+                shuffle(indiv)
             fitness = self.evaluator(indiv)
             population.append((indiv, fitness))
+            newborns.append(indiv)
         return population
     
     def survive(self, population):
@@ -189,6 +208,34 @@ class GA():
             elif self.cross_type == "split":
                 split = len(dad) // 2
                 child = dad[:split] + mom[split:]
+            elif self.cross_type == "uniq_split":
+                split = len(dad) // 2
+                child = dad[:split] + mom[split:]
+                bounds = self.bounds[0]
+                step = bounds[2]
+                for i, gene in enumerate(child):
+                    # если ген с таким значением уже есть, генерируем случайное значение
+                    if gene in child[:i]:
+                        while True:  #TODO: сделать, чтобы цикл не был бесконечным
+                            gene = choice(frange(bounds[0], bounds[1]+step, step))
+                            if gene not in child:
+                                child[i] = gene
+                                break
+            elif self.cross_type == "uniq_random":
+                for gene_m, gene_f in zip(dad, mom):  # извлекаем геном
+                    gene = choice((gene_m, gene_f))
+                    child.append(gene)
+                bounds = self.bounds[0]
+                step = bounds[2]
+                for i, gene in enumerate(child):
+                    # если ген с таким значением уже есть, генерируем случайное значение
+                    if gene in child[:i]:
+                        while True:  #TODO: сделать, чтобы цикл не был бесконечным
+                            gene = choice(frange(bounds[0], bounds[1]+step, step))
+                            if gene not in child:
+                                child[i] = gene
+                                break
+                
             newborns.append(child)
         return newborns
 
@@ -204,14 +251,14 @@ class GA():
         elif mutagen == "1_change":
             gene_ids = [randint(0, len(indiv)-1) for _ in range(mutate_genes)]
             for gene_id in gene_ids:
-                while True:
+                while True:  #TODO: сделать, чтобы цикл не был бесконечным
                     coef = uniform(0.9, 1.1)
                     if self.bounds[gene_id][0] <= indiv[gene_id] * coef <= self.bounds[gene_id][1]:
                         indiv[gene_id] *= coef
                         break
         elif mutagen == "full_change":
             for gene_id in range(len(indiv)):
-                while True:
+                while True:  #TODO: сделать, чтобы цикл не был бесконечным
                     coef = uniform(0.9, 1.1)
                     if self.bounds[gene_id][0] <= indiv[gene_id] * coef <= self.bounds[gene_id][1]:
                         indiv[gene_id] *= coef
@@ -220,7 +267,7 @@ class GA():
             gene_ids = [randint(0, len(indiv)-1) for _ in range(mutate_genes)]
             for gene_id in gene_ids:
                 gene_id = randint(0, len(indiv)-1)
-                while True:
+                while True:  #TODO: сделать, чтобы цикл не был бесконечным
                     step = self.bounds[gene_id][2]
                     step = choice([-step, step])
                     if self.bounds[gene_id][0] <= indiv[gene_id] + step <= self.bounds[gene_id][1]:
@@ -228,12 +275,16 @@ class GA():
                         break
         elif mutagen == "full_step":
             for gene_id in range(len(indiv)):
-                while True:
+                while True:  #TODO: сделать, чтобы цикл не был бесконечным
                     step = self.bounds[gene_id][2]
                     step = choice([-step, step])
                     if self.bounds[gene_id][0] <= indiv[gene_id] + step <= self.bounds[gene_id][1]:
                         indiv[gene_id] += step
                         break
+        elif mutagen == "swap":
+            for _ in range(mutate_genes):
+                gene_id_a, gene_id_b = sample(range(len(indiv)), 2)
+                indiv[gene_id_a], indiv[gene_id_b] = indiv[gene_id_b], indiv[gene_id_a]
         return indiv
     
     def cataclysm(self, population):
@@ -245,34 +296,43 @@ class GA():
                   format(self.stagnation, self.cata_mutagen, self.cata_mutate_genes))
         return post_population
     
-    def gen_bounds(self, left, right, step, num):
-        return [(left, right, step) for _ in range(num)]
     
-    def prepare_plot(self):
-        plt.ion()
-        self.fig, self.ax = plt.subplots(2, sharex=True)
-        self.ax[0].set_ylabel("Fitness")
-        self.ax[1].set_ylabel("Spread")
-        self.ax[0].set_xlim([0, self.steps])
-        plt.pause(0.0001)
-        self.avg = []
-    
-    def draw(self):
-        self.avg.append(sum(self.fitness[-1]) / len(self.fitness[-1]))
-        x = np.asarray([range(len(self.fitness)) for _ in range(len(self.fitness[0]))])
-        y = np.transpose(self.fitness)
-        self.ax[0].scatter(x=x, y=y, color="blue", marker=".")
-        self.ax[0].plot(self.avg, color="red", lw=1)
-        self.ax[1].plot(self.spreads, color="green", lw=1)
-#         low, high = 1, 1
-#         for gen in self.fitness:
-#             low = min(low, min(gen))
-#             high = max(high, max(gen))
-#         self.ax[0].set_ylim([low, high])
-        plt.pause(0.001)
+class Plotter(Thread):
+    def __init__(self):
+        Thread.__init__(self)
+#         self.daemon = True
         
-class Plotter():
-    pass
+    def update(self, fitness, spreads):
+        self.fitness = fitness
+        self.spreads = spreads
+        
+    def stop(self):
+        self.running = False
+        
+    def run(self):
+        self.running = True
+        self.fitness = []
+        fig = plt.figure(1)
+        ax = fig.add_subplot(111)
+        step = 0
+        while True:
+            if len(self.fitness) > step:
+                step = len(self.fitness)
+                avg = []
+                for f in self.fitness:
+                    avg.append(sum(f) / len(f))
+                
+                x = np.asarray([range(len(self.fitness)) for _ in range(len(self.fitness[0]))])
+                y = np.transpose(self.fitness)
+                
+                ax.clear()
+                ax.set_xlim([0, step])
+                ax.scatter(x=x, y=y, color="blue", marker=".")
+                ax.plot(avg, color="red", lw=1)
+            plt.pause(0.000001)
+            if not self.running and not plt.fignum_exists(1):
+                plt.close(fig)
+                break
     
 
 def frange(start, stop, step):
