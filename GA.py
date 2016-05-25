@@ -3,12 +3,10 @@
 @email: pasaranax@gmail.com
 '''
 from random import randint, choice, uniform, sample, shuffle
-from time import time, sleep
+from time import time
 from math import exp, isclose
 from json import dump, load
-from multiprocessing.pool import Pool
-from multiprocessing import Process  # @UnresolvedImport
-from threading import Thread, active_count
+from threading import Thread
 try:
     import numpy as np
     import matplotlib.pyplot as plt
@@ -68,7 +66,7 @@ class GA():
         self.verbose = verbose
         self.plot = plot
         
-        self.best_ever = []  # История лучших
+        self.best = []  # История лучших
         self.fitness = []  # сохраняем рейтинги для анализа
         self.spreads = []  # сохраняем спреды для анализа
         default_step = 0.01
@@ -113,22 +111,25 @@ class GA():
             newborns = []  # новорожденные без фитнеса
         if self.init:
             newborns.append(self.init)
+        best_ever = None
         for i in range(self.steps):
             ti = time()
             population = self.generate_population(newborns)  # популяция с фитнесом
-            if len(self.best_ever) == 0:
-                self.best_ever.append(population[0])
-            best = self.survive(population)            
-            newborns = self.crossover(best)
+            survivors = self.survive(population)            
+            newborns = self.crossover(survivors)
             
-            self.best_ever.append(best[0])
+            self.best.append(survivors[0])
             self.fitness.append([i[1] for i in population])
+            if not best_ever:
+                best_ever = self.best[-1]
+            else:
+                best_ever = max(best_ever, self.best[-1], key=lambda i: i[1])
 
             if self.verbose:
                 elapsed = time()-t
                 remaining = (time()-ti)*(self.steps-i)
                 print("- Step {:d} / {:d} results: best: {:.3f}, elapsed: {:.0f}m {:.0f}s, remaining: {:.0f}m {:.0f}s".
-                      format(i+1, self.steps, self.best_ever[-1][1],
+                      format(i+1, self.steps, best_ever[1],
                              elapsed // 60, elapsed % 60, remaining // 60, remaining % 60))
             
             # сохраняем популяцию в файл
@@ -155,11 +156,11 @@ class GA():
             if self.plot:
                 self.plotter.update(self.fitness, self.spreads)
         if self.verbose >= 1:
-            print("Best: {} - {}".format(self.best_ever[-1][1], self.best_ever[-1][0]))
+            print("Best: {} - {}".format(best_ever[1], best_ever[0]))
         if self.plot:
             self.plotter.stop()
             self.plotter.join()
-        return max(self.best_ever, key=lambda i: i[1])
+        return best_ever
     
     def generate_population(self, newborns):
         population = []
