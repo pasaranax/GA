@@ -44,6 +44,7 @@ class GA():
                           1_random - менять один ген на случайное число в диапазоне bounds, full_random - так же менять все гены,
                           1_change - менять один ген на 0-10% (случайно), full_change - так же менять все гены
                           swap - поменять местами 2 гена (используйте только если все гены имеют одинаковые границы bounds)
+                          swap_near - поменять местами 2 соседних гена
         :param cata_mutagen: тип мутации при катаклизме
         :param verbose: уровень вывода в консоль
         :param plot: рисовать график результатов (необходим matplotlib, может замедлить работу)
@@ -171,16 +172,16 @@ class GA():
         # создаем случайных особей, если есть места в популяции
         for _ in range(self.population_limit - len(newborns)):
             indiv = []
-            if self.mutagen.endswith("random") or self.mutagen.endswith("change"):
+            if "random" in self.mutagen or "change" in self.mutagen:
                 for bounds in self.bounds:
                     gene = uniform(bounds[0], bounds[1])
                     indiv.append(gene)
-            elif self.mutagen.endswith("step"):
+            elif "step" in self.mutagen:
                 for bounds in self.bounds:
                     step = bounds[2]
                     gene = choice(frange(bounds[0], bounds[1]+step, step))
                     indiv.append(gene)
-            elif self.mutagen.endswith("swap"):
+            elif "swap" in self.mutagen:
                 bounds = self.bounds[0]
                 step = bounds[2]
                 indiv = frange(bounds[0], bounds[1]+step, step)
@@ -285,6 +286,10 @@ class GA():
             for _ in range(mutate_genes):
                 gene_id_a, gene_id_b = sample(range(len(indiv)), 2)
                 indiv[gene_id_a], indiv[gene_id_b] = indiv[gene_id_b], indiv[gene_id_a]
+        elif mutagen == "swap_near":
+            for _ in range(mutate_genes):
+                gene_id = randint(0, len(indiv)-2)
+                indiv[gene_id], indiv[gene_id+1] = indiv[gene_id+1], indiv[gene_id]            
         return indiv
     
     def cataclysm(self, population):
