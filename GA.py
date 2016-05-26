@@ -138,7 +138,7 @@ class GA():
 
             # условие катаклизма
             if self.stagnation:
-                best_fitness = [i[1] for i in self.best_ever[-self.stagnation:]]
+                best_fitness = [i[1] for i in self.best[-self.stagnation:]]
                 if len(best_fitness) == self.stagnation and len(set(best_fitness)) == 1:
                     newborns = self.cataclysm(population)
             
